@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="no-referrer">
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00e0c6">
+    <title>Aperture Private Environment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@mozilla/readability@0.5.0/Readability.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --header-bg-glass: rgba(30, 30, 30, 0.6);
+            --border-color: #444;
+            --text-color: #e0e0e0;
+            --text-secondary-color: #b0b0b0;
+            --accent-color: #00bcd4;
+            --accent-hover-color: #0097a7;
+            --error-color: #ff5252;
+            --shadow-color-dark: rgba(0, 0, 0, 0.5);
+            --glow-shadow: 0 0 20px rgba(0, 188, 212, 0.2), 0 0 30px rgba(0, 188, 212, 0.1);
+            --main-transition-duration: 0.6s;
+            --fast-transition-duration: 0.3s;
+            --transition-curve-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg-color); color: var(--text-color);
+            overflow: hidden;
+        }
+
+        #progress-bar {
+            position: fixed; top: 0; left: 0; height: 3px;
+            background: linear-gradient(90deg, var(--accent-color), #4a00e0);
+            width: 0; z-index: 1000; transition: width 0.3s, opacity 0.3s;
+            box-shadow: var(--glow-shadow);
+        }
+
+        .app-container { display: flex; flex-direction: column; height: 100vh; opacity: 0; animation: fadeInContainer 1s 0.2s var(--transition-curve-smooth) forwards; }
+        @keyframes fadeInContainer { to { opacity: 1; } }
+
+        .search-header {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            flex-grow: 1; padding: 20px;
+            transition: all var(--main-transition-duration) var(--transition-curve-smooth);
+        }
+
+        .app-logo {
+            display: flex; align-items: center; font-size: 4em; font-weight: 700;
+            color: var(--text-secondary-color); margin-bottom: 50px; cursor: default; user-select: none;
+            opacity: 0; transform: translateY(20px); animation: fadeInUp 0.8s 0.5s var(--transition-curve-smooth) forwards;
+        }
+        .app-logo .logo-icon { width: 1.1em; height: 1.1em; margin-right: 0.35em; fill: var(--accent-color); transition: transform 0.8s var(--transition-curve-smooth); }
+        .app-logo:hover .logo-icon { transform: rotate(-360deg) scale(1.15); }
+        .app-logo .logo-text span { color: var(--accent-color); }
+
+        #search-form {
+            position: relative; display: flex; width: 100%; max-width: 720px;
+            opacity: 0; transform: translateY(20px); animation: fadeInUp 0.8s 0.7s var(--transition-curve-smooth) forwards;
+        }
+        @keyframes fadeInUp { to { opacity: 1; transform: translateY(0); } }
+
+        .search-input-wrapper {
+            position: relative; flex-grow: 1;
+            background-color: var(--surface-color); border: 1px solid var(--border-color);
+            box-shadow: 0 10px 35px var(--shadow-color-dark); border-radius: 40px;
+            transition: all var(--main-transition-duration) var(--transition-curve-smooth);
+        }
+        .search-input-wrapper:focus-within { border-color: var(--accent-color); box-shadow: 0 10px 35px var(--shadow-color-dark), var(--glow-shadow); }
+
+        #search-input {
+            width: 100%; height: 68px; padding: 0 80px 0 38px; font-size: 18px;
+            font-weight: 400; border: none; border-radius: 40px; outline: none;
+            background-color: transparent; color: var(--text-color);
+        }
+
+        #search-button {
+            position: absolute; top: 0; right: 0; height: 68px; width: 75px; border: none; background-color: transparent;
+            color: var(--accent-color); cursor: pointer; user-select: none;
+            border-radius: 0 40px 40px 0; display: flex; align-items: center; justify-content: center;
+            transition: all 0.3s var(--transition-curve-smooth);
+        }
+        #search-button:hover:not(.loading) { background-color: var(--accent-hover-color); color: #fff; }
+        #search-button.loading { pointer-events: none; }
+        #search-button.loading .search-icon { display: none; }
+        #search-button:not(.loading) .loader-icon { display: none; }
+        #search-button .loader-icon { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #search-suggestions {
+            position: absolute; top: calc(100% + 8px); left: 0; right: 0;
+            background-color: var(--surface-color); border: 1px solid var(--border-color);
+            border-radius: 24px; box-shadow: 0 10px 35px var(--shadow-color-dark);
+            z-index: 10; overflow: hidden; opacity: 0;
+            transform: translateY(-10px); transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+        }
+        #search-suggestions.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .suggestion-item { display: flex; align-items: center; padding: 14px 24px; cursor: pointer; color: var(--text-secondary-color); transition: background-color 0.2s; }
+        .suggestion-item:hover, .suggestion-item.active { background-color: rgba(255, 255, 255, 0.05); color: var(--text-color); }
+
+        .content-wrapper { position: relative; flex-grow: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+        #page-viewer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-color); z-index: 10;
+            transform: translateX(100%);
+            transition: transform 0.6s var(--transition-curve-smooth);
+            padding-top: 44px; padding-bottom: 60px;
+        }
+        #page-viewer.visible { transform: translateX(0); }
+        #page-viewer-iframe { width: 100%; height: 100%; border: none; background: transparent; }
+
+        #page-viewer-top-bar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 44px;
+            background: var(--header-bg-glass); backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 15; display: flex; align-items: center; padding: 0 8px;
+            opacity: 0; transform: translateY(-100%);
+            transition: opacity 0.5s, transform 0.5s var(--transition-curve-smooth);
+        }
+        #page-viewer-top-bar.visible { opacity: 1; transform: translateY(0); }
+        #page-url-display { flex-grow: 1; text-align: center; font-size: 14px; color: var(--text-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 10px; }
+        .page-top-button { flex-shrink: 0; width: 40px; height: 40px; background: transparent; border: none; border-radius: 8px; color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+        #page-viewer-bottom-nav {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 60px;
+            background: var(--header-bg-glass); backdrop-filter: blur(16px);
+            border-top: 1px solid var(--border-color);
+            z-index: 15; display: flex; justify-content: space-around; align-items: center;
+            opacity: 0; transform: translateY(100%);
+            transition: opacity 0.5s, transform 0.5s var(--transition-curve-smooth);
+        }
+        #page-viewer-bottom-nav.visible { opacity: 1; transform: translateY(0); }
+        #page-viewer-bottom-nav.hidden { transform: translateY(100%); }
+        .page-nav-button { flex-grow: 1; height: 100%; background: transparent; border: none; color: var(--text-color); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: background-color 0.2s, color 0.2s; }
+        .page-nav-button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .page-nav-button:active:not(:disabled) { background: rgba(255,255,255,0.1); }
+        .page-nav-button.active { color: var(--accent-color); }
+        #burn-history-button:hover { color: var(--error-color); }
+
+        #mode-selection-overlay, #login-bypass-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 20;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+        #mode-selection-overlay.visible, #login-bypass-overlay.visible { opacity: 1; pointer-events: auto; }
+
+        #mode-selection-sheet, #login-bypass-sheet {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: #1c1c20; border-top-left-radius: 16px; border-top-right-radius: 16px;
+            z-index: 21; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom));
+            transform: translateY(100%);
+            transition: transform 0.4s var(--transition-curve-smooth);
+        }
+        #mode-selection-sheet.visible, #login-bypass-sheet.visible { transform: translateY(0); }
+
+        #mode-selection-sheet h3, #login-bypass-sheet h3 { margin: 0 0 8px; text-align: center; font-weight: 600; }
+        #mode-selection-sheet p, #login-bypass-sheet p { margin: 0 0 24px; text-align: center; font-size: 14px; color: var(--text-secondary-color); }
+        .mode-option { display: flex; align-items: center; width: 100%; padding: 12px; border-radius: 8px; background: transparent; border: none; color: var(--text-color); text-align: left; margin-bottom: 8px; }
+        .mode-option:active { background: rgba(255,255,255,0.1); }
+        .mode-option.active { background: rgba(0, 224, 198, 0.1); color: var(--accent-color); }
+        .mode-option-icon { margin-right: 16px; }
+        .mode-option-text strong { display: block; font-size: 16px; font-weight: 500; }
+        .mode-option-text span { font-size: 13px; color: var(--text-secondary-color); }
+        .mode-option.active .mode-option-text span { color: var(--accent-color); opacity: 0.8; }
+
+        #login-bypass-sheet { max-height: 80vh; display: flex; flex-direction: column; }
+        #login-bypass-results { overflow-y: auto; padding-right: 8px; }
+        .result-item { background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 16px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: flex-start; cursor: pointer; }
+        .result-item:hover { background: rgba(255,255,255,0.07); border-color: var(--accent-color); }
+        .favicon { width: 20px; height: 20px; margin-right: 12px; margin-top: 4px; border-radius: 4px; flex-shrink: 0; background-color: rgba(255, 255, 255, 0.05); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: var(--text-secondary-color); text-transform: uppercase; overflow: hidden; }
+
+        .state-page .search-header { flex-grow: 0; height: 0; padding: 0; opacity: 0; overflow: hidden; }
+
+        #reader-view { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: auto; padding: 40px 20px; background: var(--bg-color); color: var(--text-color); }
+        #reader-view-content { max-width: 720px; margin: 0 auto; font-size: 18px; line-height: 1.7; }
+        #reader-view-content h1, #reader-view-content h2 { line-height: 1.3; color: var(--text-color); margin-bottom: 0.5em; }
+        #reader-view-content h1 { color: var(--accent-color); }
+        #reader-view-content .byline { color: var(--text-secondary-color); margin-bottom: 2em; font-size: 0.9em; }
+        #reader-view-content a { color: var(--accent-color); text-decoration: none; border-bottom: 1px solid var(--accent-hover-color); }
+        #reader-view-content img, #reader-view-content video, #reader-view-content figure { max-width: 100%; height: auto; border-radius: 8px; margin: 1.5em 0; }
+        #reader-view-content pre, #reader-view-content code { background: var(--surface-color); border-radius: 4px; padding: 2px 4px; font-size: 0.9em; }
+        #reader-view-content pre { padding: 1em; overflow-x: auto; }
+
+        #page-viewer-error { display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100%; padding: 20px; color: var(--text-secondary-color); }
+        .error-content h2 { color: var(--text-color); margin-top: 20px; margin-bottom: 10px; }
+        .error-content p { max-width: 400px; margin-bottom: 30px; line-height: 1.6; }
+        .error-content svg { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .error-actions button { background: var(--surface-color); border: 1px solid var(--border-color); color: var(--text-color); padding: 10px 20px; margin: 5px; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-weight: 500; }
+        .error-actions button:hover { background: var(--accent-color); border-color: var(--accent-color); color: var(--bg-color); }
+    </style>
+</head>
+<body>
+    <div id="progress-bar"></div>
+
+    <div class="app-container" id="app-container">
+        <header class="search-header">
+            <h1 class="app-logo" id="app-logo" title="Aperture">
+                <svg class="logo-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.03998C12.8906 2.03998 13.7812 2.18748 14.5312 2.48435L14.6094 2.5156L15.2188 2.7656L19.5938 4.48435C20.0781 4.67185 20.3594 5.17185 20.3594 5.68748V10.2656C20.3594 15.0781 17.3906 19.3593 13.0781 21.4062L12.5312 21.6875C12.3594 21.7812 12.1719 21.8281 11.9844 21.8281C11.8125 21.8281 11.625 21.7812 11.4531 21.6875L10.9062 21.4062C6.59375 19.3593 3.625 15.0781 3.625 10.2656V5.68748C3.625 5.17185 3.90625 4.67185 4.39062 4.48435L8.76562 2.7656L9.375 2.5156L9.45312 2.48435C10.2031 2.18748 11.0938 2.03998 11.9844 2.03998H12Z M12 7.00001C13.0753 7.00001 14.0994 7.42144 14.8284 8.1504C15.5574 8.87935 15.9788 9.90349 15.9788 11C15.9788 12.0965 15.5574 13.1206 14.8284 13.8496C14.0994 14.5786 13.0753 15 12 15C10.9247 15 9.90058 14.5786 9.17163 13.8496C8.44268 13.1206 8.02125 12.0965 8.02125 11C8.02125 9.90349 8.44268 8.87935 9.17163 8.1504C9.90058 7.42144 10.9247 7.00001 12 7.00001Z" /></svg>
+                <span class="logo-text">Aperture<span>.</span></span>
+            </h1>
+            <form id="search-form">
+                <div class="search-input-wrapper">
+                    <input type="text" id="search-input" placeholder="Search or enter a URL..." required autocomplete="off">
+                    <button type="submit" id="search-button" title="Search">
+                        <svg class="search-icon" width="28" height="28" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>
+                        <svg class="loader-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    </button>
+                    <div id="search-suggestions"></div>
+                </div>
+            </form>
+        </header>
+
+        <div class="content-wrapper">
+            <div id="page-viewer">
+                <div id="page-viewer-top-bar">
+                    <span id="page-url-display"></span>
+                    <button id="close-viewer-button" class="page-top-button" title="Back to Home">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+                <div id="page-viewer-error"></div>
+                <div id="reader-view" style="display: none;"><div id="reader-view-content"></div></div>
+                <iframe id="page-viewer-iframe" sandbox="allow-forms allow-modals allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation" referrerpolicy="no-referrer"></iframe>
+                <div id="page-viewer-bottom-nav">
+                    <button id="back-button" class="page-nav-button" title="Back"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                    <button id="forward-button" class="page-nav-button" title="Forward"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    <button id="reload-button" class="page-nav-button" title="Reload"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
+                    <button id="mode-button" class="page-nav-button" title="Change Mode"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></button>
+                    <button id="burn-history-button" class="page-nav-button" title="Burn History & Session"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2.5-2.5-2.5S6 10.62 6 12a2.5 2.5 0 0 0 2.5 2.5z"></path><path d="M12 12h.01"></path><path d="M17.5 14.5a2.5 2.5 0 0 0 2.5-2.5c0-1.38-.5-2.5-2.5-2.5s-2.5 1.12-2.5 2.5a2.5 2.5 0 0 0 2.5 2.5z"></path><path d="M12 6.82c1.5-2.3 4.5-3.82 7.5-3.82 3.5 0 6.5 2.86 6.5 6.5A6.47 6.47 0 0 1 22.5 16c-2 2-5 3-7.5 3s-5.5-1-7.5-3A6.47 6.47 0 0 1 1.5 13c0-3.64 3-6.5 6.5-6.5 3 0 6 1.52 7.5 3.82z"></path></svg></button>
+                    <button id="external-link-button" class="page-nav-button" title="Open in New Tab"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="mode-selection-overlay"></div>
+    <div id="mode-selection-sheet">
+        <h3>A1-Bist Engine</h3>
+        <p>Select a viewing mode for the page.</p>
+        <button class="mode-option" data-mode="interactive">
+            <div class="mode-option-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg></div>
+            <div class="mode-option-text"><strong>Interactive</strong><span>Full experience, mobile optimized.</span></div>
+        </button>
+        <button class="mode-option" data-mode="desktop">
+            <div class="mode-option-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg></div>
+            <div class="mode-option-text"><strong>Desktop</strong><span>View the full desktop site.</span></div>
+        </button>
+        <button class="mode-option" data-mode="reader">
+            <div class="mode-option-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+            <div class="mode-option-text"><strong>Reader</strong><span>Clutter-free article view.</span></div>
+        </button>
+        <button class="mode-option" data-mode="readonly">
+            <div class="mode-option-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div>
+            <div class="mode-option-text"><strong>Secure</strong><span>No scripts or external requests.</span></div>
+        </button>
+    </div>
+
+    <div id="login-bypass-overlay"></div>
+    <div id="login-bypass-sheet">
+        <h3>Login Detected</h3>
+        <p>We can't log you in, but here are public pages from this site that might be useful.</p>
+        <div id="login-bypass-results"></div>
+    </div>
+
+    <script>
+    (function() {
+        // --- CONSTANTS & CONFIG ---
+        const PROXIES = [
+            { prefix: 'https://api.allorigins.win/raw?url=', score: 0 },
+            { prefix: 'https://cors.sh/?url=', score: 0 }
+        ];
+        const SUGGESTION_API_URL = 'https://ac.duckduckgo.com/ac/?type=json&q=';
+        const FETCH_TIMEOUT = 15000;
+        const MOBILE_USER_AGENT = 'Mozilla/5.0 (Android 10; Mobile; rv:109.0) Gecko/109.0 Firefox/115.0';
+        const DESKTOP_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0';
+        const SEARCH_ENGINE_URL_TEMPLATE = 'https://search.brave.com/search?q={q}&source=web';
+        const ADVANCED_INJECTED_SCRIPT = `<script>try{const e=()=>{const t=27,o=new Date().getFullYear()-t;document.cookie="age="+t+"; path=/",document.cookie="dob_year="+o+"; path=/",localStorage.setItem("user_age",t),localStorage.setItem("age_gate_passed","true")};e();let t=0;const o=setInterval(()=>{e(),(t+=1)>=10&&clearInterval(o)},300)}catch(e){}document.addEventListener("click",e=>{const t=e.target.closest("a");t&&t.href&&"_top"!==t.target&&(e.preventDefault(),window.parent.postMessage({type:"aperture-navigate",url:t.href},"*"))},!0),document.addEventListener("submit",e=>{const t=e.target.closest("form");if(t){e.preventDefault();if("post"===t.method.toLowerCase())return void alert("POST forms are disabled for security.");const o=new URL(t.action||window.location.href);o.search=new URLSearchParams(new FormData(t)).toString(),window.parent.postMessage({type:"aperture-navigate",url:o.href},"*")}},!0);<\/script>`;
+
+        // --- DOM ELEMENTS ---
+        const dom = { app:document.getElementById('app-container'),form:document.getElementById('search-form'),input:document.getElementById('search-input'),searchButton:document.getElementById('search-button'),searchSuggestions:document.getElementById('search-suggestions'),progressBar:document.getElementById('progress-bar'),pageViewer:document.getElementById('page-viewer'),pageViewerTopBar:document.getElementById('page-viewer-top-bar'),closeViewerButton:document.getElementById('close-viewer-button'),pageViewerBottomNav:document.getElementById('page-viewer-bottom-nav'),backButton:document.getElementById('back-button'),forwardButton:document.getElementById('forward-button'),reloadButton:document.getElementById('reload-button'),modeButton:document.getElementById('mode-button'),burnHistoryButton:document.getElementById('burn-history-button'),externalLinkButton:document.getElementById('external-link-button'),pageUrlDisplay:document.getElementById('page-url-display'),iframe:document.getElementById('page-viewer-iframe'),pageViewerError:document.getElementById('page-viewer-error'),readerView:document.getElementById('reader-view'),modeSelectionOverlay:document.getElementById('mode-selection-overlay'),modeSelectionSheet:document.getElementById('mode-selection-sheet'),loginBypassOverlay:document.getElementById('login-bypass-overlay'),loginBypassSheet:document.getElementById('login-bypass-sheet'),loginBypassResults:document.getElementById('login-bypass-results'), };
+
+        // --- STATE MANAGEMENT ---
+        let currentViewState = { url: '', mode: 'interactive', history: [], historyIndex: -1, pageHTML: '', error: null };
+        let prefetchCache = {};
+        let suggestionIndex = -1;
+
+        const saveState = () => { try { localStorage.setItem('aperture_history', JSON.stringify({ history: currentViewState.history, historyIndex: currentViewState.historyIndex })); if (currentViewState.url && dom.app.classList.contains('state-page')) { sessionStorage.setItem('aperture_session', JSON.stringify({ url: currentViewState.url, mode: currentViewState.mode })); } else { sessionStorage.removeItem('aperture_session'); } } catch (e) { console.error("Failed to save state:", e); } };
+        const loadState = () => { try { const storedHistory = localStorage.getItem('aperture_history'); if (storedHistory) { const { history, historyIndex } = JSON.parse(storedHistory); currentViewState.history = history || []; currentViewState.historyIndex = historyIndex ?? -1; } const storedSession = sessionStorage.getItem('aperture_session'); if (storedSession) { const { url, mode } = JSON.parse(storedSession); if (url) { setTimeout(() => navigateTo(url, false, mode), 100); } } } catch (e) { console.error("Failed to load state:", e); localStorage.clear(); sessionStorage.clear(); } };
+        const burnHistory = () => {
+            if (!confirm('Are you sure you want to permanently delete all history and session data? This action cannot be undone.')) return;
+            startProgress();
+            try {
+                localStorage.removeItem('aperture_history');
+                sessionStorage.removeItem('aperture_session');
+                currentViewState = { url: '', mode: 'interactive', history: [], historyIndex: -1, pageHTML: '', error: null };
+                dom.input.value = '';
+                setAppState('');
+            } catch (e) { console.error("Failed to burn history:", e); }
+            setTimeout(finishProgress, 300);
+        };
+
+        // --- CORE ENGINE ---
+        const fetchWithProxy = async (targetUrl, headers = {}) => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT * PROXIES.length);
+
+            // Sort proxies by score (lower is better)
+            PROXIES.sort((a, b) => a.score - b.score);
+
+            for (const proxy of PROXIES) {
+                const startTime = Date.now();
+                try {
+                    const response = await fetch(`${proxy.prefix}${encodeURIComponent(targetUrl)}`, {
+                        headers: { 'User-Agent': headers['User-Agent'] || MOBILE_USER_AGENT, 'X-Requested-With': 'XMLHttpRequest' },
+                        signal: controller.signal
+                    });
+                    if (!response.ok) {
+                        proxy.score += 5000; // Penalize for non-ok response
+                        continue;
+                    }
+                    const text = await response.text();
+                    if (/Cloudflare|hCaptcha|Verifying you are human|Checking your browser/i.test(text)) {
+                        console.warn(`Proxy ${proxy.prefix} returned a block page. Trying next...`);
+                        proxy.score += 15000; // Heavily penalize for block pages
+                        continue;
+                    }
+                    clearTimeout(timeoutId);
+                    proxy.score = (Date.now() - startTime); // Update score with response time
+                    return text;
+                } catch (error) {
+                    console.error(`Proxy ${proxy.prefix} failed:`, error.name);
+                    proxy.score += 10000; // Penalize for fetch errors
+                    if (error.name === 'AbortError') break;
+                }
+            }
+            clearTimeout(timeoutId);
+            throw new Error('All proxies failed to fetch the content. The site may be down or blocking access.');
+        };
+        const navigateTo = async (url, pushToHistory = true, newMode = null) => {
+            if (!url) return;
+            const cleanUrl = stripTrackingParams(url);
+            const mode = newMode || (currentViewState.url === cleanUrl ? currentViewState.mode : 'interactive');
+            setAppState('page');
+            dom.iframe.style.display = 'none'; dom.readerView.style.display = 'none'; dom.pageViewerError.style.display = 'none';
+            startProgress();
+            try {
+                const userAgent = mode === 'desktop' ? DESKTOP_USER_AGENT : MOBILE_USER_AGENT;
+                const pageHTML = prefetchCache[cleanUrl] ? await prefetchCache[cleanUrl] : await fetchWithProxy(cleanUrl, { 'User-Agent': userAgent });
+                delete prefetchCache[cleanUrl];
+
+                const doc = new DOMParser().parseFromString(pageHTML, 'text/html');
+                if (await detectAndBypassLogin(doc, cleanUrl)) {
+                    finishProgress();
+                    return;
+                }
+
+                currentViewState = { ...currentViewState, url: cleanUrl, mode, pageHTML, error: null };
+                if (pushToHistory && currentViewState.history[currentViewState.historyIndex] !== cleanUrl) {
+                    currentViewState.history.splice(currentViewState.historyIndex + 1);
+                    currentViewState.history.push(cleanUrl);
+                    currentViewState.historyIndex++;
+                }
+                await renderPage(doc);
+            } catch (error) {
+                currentViewState = { ...currentViewState, url: cleanUrl, mode, pageHTML: null, error: error.message };
+                renderError('Failed to Load Page', error.message, cleanUrl);
+            } finally {
+                finishProgress();
+                saveState();
+            }
+        };
+        const detectAndBypassLogin = async (doc, url) => {
+            const hasPasswordField = doc.querySelector('input[type="password"]');
+            const bodyText = doc.body.textContent.toLowerCase();
+            const hasLoginKeywords = /log in|sign in|username|e-mail address/.test(bodyText);
+
+            if (hasPasswordField && hasLoginKeywords) {
+                const title = doc.title.replace(/log in|sign in|login|signin/i, '').replace(/[-|–_]/g, ' ').trim();
+                const hostname = new URL(url).hostname;
+                const searchQuery = `site:${hostname} ${title}`;
+
+                toggleLoginBypassSheet(true);
+                await performScopedSearch(searchQuery, dom.loginBypassResults);
+                return true;
+            }
+            return false;
+        };
+        const performScopedSearch = async (query, targetElement) => {
+            targetElement.innerHTML = 'Searching for public pages...';
+            try {
+                const searchUrl = SEARCH_ENGINE_URL_TEMPLATE.replace('{q}', encodeURIComponent(query));
+                const html = await fetchWithProxy(searchUrl);
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const parsedResults = Array.from(doc.querySelectorAll('div.snippet[data-pos]')).map(result => {
+                    const titleEl = result.querySelector('a.snippet-title');
+                    const urlEl = result.querySelector('div.url');
+                    const descEl = result.querySelector('div.snippet-content');
+                    if (!titleEl || !urlEl || !descEl || !titleEl.href) return null;
+                    return { title: titleEl.textContent.trim(), url: titleEl.href, displayUrl: urlEl.textContent.trim(), description: descEl.textContent.trim() };
+                }).filter(Boolean);
+
+                if (parsedResults.length === 0) {
+                    targetElement.innerHTML = `<p style="text-align:center;padding:20px;">No public pages found for this site.</p>`;
+                    return;
+                }
+                const fragment = document.createDocumentFragment();
+                parsedResults.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'result-item';
+                    item.dataset.url = p.url;
+                    const hostname = new URL(p.url).hostname;
+                    const faviconLetter = hostname.replace('www.','').charAt(0);
+                    item.innerHTML = `<div class="favicon" style="background-image:url(https://icons.duckduckgo.com/ip3/${hostname}.ico)">${faviconLetter}</div><div style="flex-grow:1;"><a href="javascript:void(0);" class="result-title" style="display:block;font-size:1.1em;font-weight:500;color:var(--accent-color);text-decoration:none;margin-bottom:6px;">${p.title}</a><p style="font-size:0.9em;line-height:1.5;color:var(--text-secondary-color);margin:0;">${p.description}</p></div>`;
+                    fragment.appendChild(item);
+                });
+                targetElement.innerHTML = '';
+                targetElement.appendChild(fragment);
+            } catch (error) {
+                targetElement.innerHTML = `<p style="text-align:center;color:var(--error-color);padding:20px;">Search failed. Please try again.</p>`;
+            }
+        };
+
+        // --- UI & RENDERING ---
+        const startProgress = () => { dom.progressBar.style.opacity='1';dom.progressBar.style.width='0%';requestAnimationFrame(()=>{requestAnimationFrame(()=>{dom.progressBar.style.transition='width 10s cubic-bezier(0.22, 1, 0.36, 1)';dom.progressBar.style.width='90%'})}) };
+        const finishProgress = () => { dom.progressBar.style.transition='width 0.3s ease-out, opacity 0.3s 0.3s ease-out';dom.progressBar.style.width='100%';dom.progressBar.style.opacity='0';setTimeout(()=>{dom.progressBar.style.transition='none';dom.progressBar.style.width='0%'},600) };
+        const setAppState = (state) => { dom.app.className = `app-container state-${state}`; dom.pageViewer.classList.toggle('visible', state === 'page'); dom.pageViewerTopBar.classList.toggle('visible', state === 'page'); dom.pageViewerBottomNav.classList.toggle('visible', state === 'page'); };
+        const renderError = (title, message, url) => {
+            dom.iframe.style.display = 'none'; dom.readerView.style.display = 'none'; dom.iframe.srcdoc = 'about:blank';
+            dom.pageViewerError.style.display = 'flex';
+            dom.pageViewerError.innerHTML = `<div class="error-content"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--error-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg><h2>${title}</h2><p>${message}</p><div class="error-actions"><button data-action="reload">Retry</button><button data-action="change-mode">Change Mode</button><button data-action="open-external">Open Externally</button></div></div>`;
+            dom.pageViewerError.querySelector('[data-action="reload"]').onclick = () => navigateTo(currentViewState.url, false);
+            dom.pageViewerError.querySelector('[data-action="change-mode"]').onclick = () => toggleModeSheet(true);
+            dom.pageViewerError.querySelector('[data-action="open-external"]').onclick = () => window.open(url, '_blank', 'noopener,noreferrer');
+        };
+        const updateUiForState = () => {
+            dom.pageUrlDisplay.textContent = currentViewState.url.replace(/^(https?:\/\/)?(www\.)?/, '');
+            dom.backButton.disabled = currentViewState.historyIndex <= 0;
+            dom.forwardButton.disabled = currentViewState.historyIndex >= currentViewState.history.length - 1;
+            dom.modeButton.classList.toggle('active', currentViewState.mode !== 'interactive');
+        };
+        const renderPage = async (doc) => {
+            if (currentViewState.error || !doc) return;
+            const { url, mode } = currentViewState;
+            updateUiForState();
+            const base = doc.createElement('base'); base.href = url; doc.head.prepend(base);
+
+            if (mode === 'reader') {
+                dom.iframe.style.display = 'none'; dom.readerView.style.display = 'block';
+                const readerContent = dom.readerView.querySelector('#reader-view-content');
+                const article = new Readability(doc.cloneNode(true)).parse();
+                if (article && readerContent) {
+                    readerContent.innerHTML = `<h1>${article.title}</h1><div class="byline">${article.byline || ''}</div>${article.content}`;
+                } else if (readerContent) {
+                    readerContent.innerHTML = `<h1>Reader Mode Unavailable</h1><p>Aperture could not extract a clean article from this page.</p>`;
+                }
+            } else {
+                dom.readerView.style.display = 'none'; dom.iframe.style.display = 'block';
+                dom.iframe.sandbox = mode === 'readonly' ? "" : "allow-forms allow-modals allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation";
+                if (mode === 'readonly') {
+                    doc.querySelectorAll('script, noscript, iframe, link[rel="preload"], link[rel="prefetch"]').forEach(el => el.remove());
+                } else {
+                    doc.head.appendChild(doc.createRange().createContextualFragment(ADVANCED_INJECTED_SCRIPT));
+                }
+                dom.iframe.srcdoc = doc.documentElement.outerHTML;
+            }
+        };
+        const toggleModeSheet = (visible) => {
+            dom.modeSelectionOverlay.classList.toggle('visible', visible);
+            dom.modeSelectionSheet.classList.toggle('visible', visible);
+            if (visible) dom.modeSelectionSheet.querySelectorAll('.mode-option').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === currentViewState.mode));
+        };
+        const toggleLoginBypassSheet = (visible) => {
+            dom.loginBypassOverlay.classList.toggle('visible', visible);
+            dom.loginBypassSheet.classList.toggle('visible', visible);
+        };
+        const stripTrackingParams = (url) => { try { const urlObj = new URL(url); const params = urlObj.searchParams; ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid','msclkid','mc_cid','mc_eid'].forEach(key => params.delete(key)); return urlObj.toString(); } catch (e) { return url; } };
+        const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
+
+        // --- EVENT HANDLERS ---
+        const handleSearchSubmit = async (event) => {
+            event.preventDefault();
+            hideSuggestions();
+            const query = dom.input.value.trim();
+            if (!query) return;
+            let targetUrl = /^(https?:\/\/)?([\w\d\.-]+)\.([\w\.]{2,6})([\/\w \.-]*)*\/?$/.test(query)
+                ? (!/^https?:\/\//i.test(query) ? 'https://' + query : query)
+                : SEARCH_ENGINE_URL_TEMPLATE.replace('{q}', encodeURIComponent(query));
+            navigateTo(targetUrl);
+        };
+        const hideSuggestions = () => dom.searchSuggestions.classList.remove('visible');
+        const handleSearchInput = debounce(async (event) => {
+            const query = event.target.value.trim();
+            if (query.length < 2 || /^(https?:\/\/)/.test(query)) { hideSuggestions(); return; }
+            try {
+                const response = await fetch(`${SUGGESTION_API_URL}${encodeURIComponent(query)}`);
+                if (!response.ok) return;
+                const data = await response.json();
+                if (!data || data.length === 0) { hideSuggestions(); return; }
+                dom.searchSuggestions.innerHTML = data.map(s => `<div class="suggestion-item" data-query="${s.phrase}">${s.phrase}</div>`).join('');
+                dom.searchSuggestions.classList.add('visible');
+                suggestionIndex = -1;
+            } catch (e) { hideSuggestions(); }
+        }, 200);
+        const handleSuggestionKeyDown = (e) => {
+            const items = dom.searchSuggestions.querySelectorAll('.suggestion-item');
+            if (!items.length || !dom.searchSuggestions.classList.contains('visible')) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); suggestionIndex = (suggestionIndex + 1) % items.length; }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); suggestionIndex = (suggestionIndex - 1 + items.length) % items.length; }
+            else if (e.key === 'Enter' && suggestionIndex > -1) { e.preventDefault(); items[suggestionIndex].click(); return; }
+            else if (e.key === 'Escape') { hideSuggestions(); return; }
+            else { return; }
+            items.forEach((item, index) => item.classList.toggle('active', index === suggestionIndex));
+        };
+        let lastScrollY = 0;
+        const handleIframeScroll = () => {
+            try {
+                const iframeWin = dom.iframe.contentWindow;
+                if (!iframeWin || !iframeWin.document.body) return;
+                const currentScrollY = iframeWin.scrollY;
+                dom.pageViewerBottomNav.classList.toggle('hidden', currentScrollY > lastScrollY && currentScrollY > 100);
+                lastScrollY = currentScrollY;
+            } catch (e) {}
+        };
+
+        // --- INITIALIZATION ---
+        dom.form.addEventListener('submit', handleSearchSubmit);
+        dom.input.addEventListener('input', handleSearchInput);
+        dom.input.addEventListener('keydown', handleSuggestionKeyDown);
+        dom.searchSuggestions.addEventListener('click', (e) => { const item = e.target.closest('.suggestion-item'); if (item) { dom.input.value = item.dataset.query; hideSuggestions(); dom.form.requestSubmit(); } });
+        document.addEventListener('click', (e) => { if (!dom.form.contains(e.target)) hideSuggestions(); });
+        dom.closeViewerButton.addEventListener('click', () => { sessionStorage.removeItem('aperture_session'); setAppState(''); });
+        dom.backButton.addEventListener('click', () => { if (currentViewState.historyIndex > 0) { currentViewState.historyIndex--; navigateTo(currentViewState.history[currentViewState.historyIndex], false); } });
+        dom.forwardButton.addEventListener('click', () => { if (currentViewState.historyIndex < currentViewState.history.length - 1) { currentViewState.historyIndex++; navigateTo(currentViewState.history[currentViewState.historyIndex], false); } });
+        dom.reloadButton.addEventListener('click', () => navigateTo(currentViewState.url, false));
+        dom.burnHistoryButton.addEventListener('click', burnHistory);
+        dom.externalLinkButton.addEventListener('click', () => { if (currentViewState.url) window.open(currentViewState.url, '_blank', 'noopener,noreferrer'); });
+        dom.modeButton.addEventListener('click', () => toggleModeSheet(true));
+        dom.modeSelectionOverlay.addEventListener('click', () => toggleModeSheet(false));
+        dom.modeSelectionSheet.addEventListener('click', (e) => { const button = e.target.closest('.mode-option'); if (button) { const newMode = button.dataset.mode; toggleModeSheet(false); if (newMode !== currentViewState.mode) navigateTo(currentViewState.url, false, newMode); } });
+        dom.loginBypassOverlay.addEventListener('click', () => toggleLoginBypassSheet(false));
+        dom.loginBypassResults.addEventListener('click', (e) => { const item = e.target.closest('.result-item'); if (item && item.dataset.url) { toggleLoginBypassSheet(false); navigateTo(item.dataset.url); } });
+        window.addEventListener('message', (e) => { if (e.data?.type === 'aperture-navigate' && e.data.url) navigateTo(e.data.url); });
+        dom.iframe.addEventListener('load', () => { try { dom.iframe.contentWindow.addEventListener('scroll', handleIframeScroll); } catch (e) {} });
+
+        loadState();
+        setTimeout(() => dom.input.focus(), 1200);
+    })();
+    </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js')
+      .then(() => console.log('Service Worker Registered'));
+  }
+</script>
+</body>
+</html>
